@@ -277,15 +277,10 @@
 	<target name="copyWorkspace" description="This ant target copies the IIB workspace from Jenkins Workspace directory.">
 		<echo message="ACE_APPLICATION_NAME:: ${ACE_APPLICATION_NAME}" />
 		<copy todir="${BUILD_WORKSPACE}" failonerror="true">
-			<fileset dir="..\..\ace_cache_loader\" />
-			<fileset dir="..\..\ace_common_lib\" />
-			<fileset dir="..\..\ace_sap_lib\" />
-			<fileset dir="..\..\ace_whi-common\" erroronmissingdir='false' />
-			<fileset dir="..\..\ace_wxs-common-lib\" />
-			<fileset dir="..\..\ace-bar-overrides\" />
-			<fileset dir="..\..\ace-build-process\" />
+			<fileset dir="../../ace-source/" />
+			<fileset dir="../../ace-build/" />
 		</copy>
-		<mkdir dir="..\..\ace-bars\" />
+		<mkdir dir="../../ace-bars/" />
 	</target>
 	<target name="copyfiles" description="This ant target copies directories/files from ${ACE_SOURCE_SERVER} to ${ACE_TARGET_SERVER}.">
 		<echo message="ACE Source Server=${ACE_SOURCE_SERVER}" />
