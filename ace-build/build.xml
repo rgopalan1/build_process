@@ -1,0 +1,457 @@
+<project name="build" default="init">
+	<!--Load ant contrib-->
+	<property environment="env" />
+	<property file=".\properties\build.properties" />
+	<scriptdef name="app_name" language="javascript">
+		<attribute name="modules"/>
+		<attribute name="result"/>
+		<attribute name="count"/>
+        <![CDATA[
+            modules = attributes.get("modules");
+			if( modules) {
+				var app_name = new Array();
+	    		app_name = modules.split(";");
+	    		app_count = app_name.length;
+				//self.log("Attribute count = " + app_name.length + "; app_names: " + app_name);
+				self.project.setProperty("app_name", app_name);
+				self.project.setProperty("app_count", app_count);
+			}
+        ]]>
+    </scriptdef>
+        	
+	<echo message="Load ant contrib from ${ANT_CONTRIB}" />
+	<taskdef resource="net/sf/antcontrib/antlib.xml">
+		<classpath>
+			<pathelement location="${ANT_CONTRIB}" />
+		</classpath>
+	</taskdef>
+	
+	<target name="init" description="To get inputs from user">
+		<if>
+			<equals arg1="${DEPLOYMENT_OPTION}" arg2="ASSEMBLE_AND_DEPLOY" />
+			<then>
+				<echo message="Assemble and deploy will be performed" />
+				<antcall target="inputs.AssembleAndDeploy" />
+			</then>
+			<elseif>
+				<equals arg1="${DEPLOYMENT_OPTION}" arg2="DEPLOY_ONLY" />
+			  	<then>
+			  		<echo message="Deploy only will be performed" />
+			  		<antcall target="inputs.deployOnly"/>
+			  	</then>
+			 </elseif> 	
+			<else>
+				<echo message="Select the deployment_option to complete the deployment process" />
+			</else>
+		</if>
+	</target>
+		
+	<target name="inputs.AssembleAndDeploy" description="To get inputs from user">
+		<echo message="JENKINS_JOB_NAME# ${JENKINS_JOB_NAME}" />
+		<echo message="JENKINS_BUILD_NUMBER# ${JENKINS_BUILD_NUMBER}" />
+		<echo message="${WORKSPACE}" />
+		<if>
+			<equals arg1="${APPLICATION_NAME}" arg2="FULL_DEPLOYMENT" />
+			<then>
+				<echo message="FULL_DEPLOYMENT will be performed" />
+				<antcall target="getApplicationsList" />
+			</then>
+			<else>
+				<antcall target="assembleApp">
+					<param name="ACE_APPLICATION_NAME" value="${APPLICATION_NAME}" />
+				</antcall>
+			</else>
+		</if>
+	</target>
+
+	<target name="inputs.deployOnly" description="To get inputs from user">
+		<echo message="JENKINS_JOB_NAME# ${JENKINS_JOB_NAME}" />
+		<echo message="JENKINS_BUILD_NUMBER# ${JENKINS_BUILD_NUMBER}" />
+		<echo message="${JENKINS_WORKSPACE}" />
+		<echo message="Full Deployment - ${ACE_APP_LIST}" /> 
+		<app_name modules="${APPLICATION_NAMES}" result="APP_NAME_LIST" count="app_count"/>
+		<echo message="calling deployOnly"/>
+		<echo message="Applications - ${APPLICATION_NAMES}"/>
+		<if>
+			<equals arg1="${APPLICATION_NAMES}" arg2="FULL_DEPLOYMENT" />
+			<then>
+				<var name="APPLICATION_LIST" value="${ACE_APP_LIST}" />
+			</then>
+			<else>
+				<var name="APPLICATION_LIST" value="${APPLICATION_NAMES}" />
+			</else>
+		</if>
+		<antcall target="DeployOnly">
+			<param name="ACE_APPLICATION_LIST" value="${APPLICATION_LIST}" />
+		</antcall>
+	</target>
+				
+	<!--Full Deployment. Get the code for all the IIB applications from GitHub and build and deploy-->
+	<target name="getApplicationsList" description="Get all the ACE application name from Property.">
+		<propertycopy property="ACE_HOSTS" from="${ENV_NAME}.ACE_REMOTE_HOSTS.LIST" />
+		<propertycopy property="ACE_APPLICATION_LIST" from="ACE_APP_LIST" />
+		<echo message="Inside getApplicationsList target : ACE_APPLICATION_LIST# ${ACE_APPLICATION_LIST}" />
+		<var name="indexCount" value="1" />
+		<var name="mathOperation" value="+" />
+		<for list="${ACE_HOSTS}" param="aceRemoteHost" delimiter=";">
+			<sequential>
+				<var name="ACE_SERVER_NAME" value="@{aceRemoteHost}" />
+				<echo message="ACE Server Name=${ACE_SERVER_NAME}" />
+				<if>
+					<equals arg1="${indexCount}" arg2="1" />
+					<then>
+						<echo message="IndexCount# ${indexCount}" />
+						<var name="ACE_SOURCE_SERVER" value="@{aceRemoteHost}" />
+						<echo message="Inside getApplicationsList target ${indexCount}" />
+						<antcall target="copyWorkspace">
+							<param name="ACE_SERVER" value="${ACE_SERVER_NAME}" />
+						</antcall>
+						<for list="${ACE_APPLICATION_LIST}" param="aceApplicationName" delimiter=";">
+							<sequential>
+								<var name="ACE_APP_NAME" value="@{aceApplicationName}" />
+								<echo message="ACE_APP_NAME:: ${ACE_APP_NAME}" />
+								<var name="APP_LIST" value="${APP_LIST} ${ACE_APP_NAME}" />
+								<echo message="Proceeding with mqsipackagebar " />
+								<antcall target="mqsicreatebar.buildbar">
+									<param name="ACE_APPLICATION_NAME" value="${ACE_APP_NAME}" />
+								</antcall>
+								<antcall target="mqsideploy.deploybar">
+									<param name="ACE_REMOTE_SERVER" value="${ACE_SOURCE_SERVER}" />
+									<param name="ACE_APPLICATION_NAME" value="${ACE_APP_NAME}" />
+									<param name="INDEX_COUNT" value="${indexCount}" />
+								</antcall>
+							</sequential>
+						</for>
+						<antcall target="cleanupFiles">
+							<param name="DEPLOYMENT_OPTION" value="${DEPLOYMENT_OPTION}" />
+							<param name="idxCount" value="${indexCount}" />
+							<param name="ACE_REMOTE_SERVER" value="${ACE_SERVER_NAME}" />
+							<param name="ACE_TARGET_DIR" value="${ACE_WORKSPACE}" />
+						</antcall>
+						<echo message="APP_LIST# ${APP_LIST}" />
+					</then>
+					<else>
+						<echo message="IndexCount# ${indexCount}" />
+						<var name="ACE_TARGET_SERVER" value="@{aceRemoteHost}" />
+						<antcall target="copyfiles">
+							<param name="DEPLOYMENT_OPTION" value="${DEPLOYMENT_OPTION}" />
+							<param name="ACE_SOURCE_SERVER" value="${ACE_SOURCE_SERVER}" />
+							<param name="ACE_TARGET_SERVER" value="${ACE_TARGET_SERVER}" />
+						</antcall>
+						<for list="${ACE_APPLICATION_LIST}" param="aceAppName" delimiter=";">
+							<sequential>
+								<var name="ACE_APP_NAME" value="@{aceAppName}" />
+								<echo message="ACE_APP_NAME:: ${ACE_APP_NAME}" />
+								<echo message="Proceeding with mqsideploy.deploybar " />
+								<antcall target="mqsideploy.deploybar">
+									<param name="ACE_REMOTE_SERVER" value="${ACE_TARGET_SERVER}" />
+									<param name="ACE_APPLICATION_NAME" value="${ACE_APP_NAME}" />
+									<param name="INDEX_COUNT" value="${indexCount}" />
+								</antcall>
+							</sequential>
+						</for>
+					</else>
+				</if>
+				<math result="indexCount" operand1="${indexCount}" operation="${mathOperation}" operand2="1" datatype="int" />
+			</sequential>
+		</for>
+	</target>
+	<!--Deploy by application. Get the code for the selected IIB application from GitHub and build and deploy-->
+	<target name="assembleApp" description="This ant target assemble, build and deploy the IIB applications depending on the deployment option chosen. ">
+		<propertycopy property="ACE_REMOTE_HOSTS" from="${ENV_NAME}.ACE_REMOTE_HOSTS.LIST" />
+		<echo message="ACE_APPLICATION_NAME# ${ACE_APPLICATION_NAME}" />
+		<echo message="BUILD_HOME# ${BUILD_HOME}" />
+		<var name="idxCount" value="1" />
+		<var name="op" value="+" />
+
+		<for list="${ACE_REMOTE_HOSTS}" param="aceRemoteBrokerHost" delimiter=";">
+			<sequential>
+				<echo message="DEPLOYMENT_OPTION# ${DEPLOYMENT_OPTION}" />
+				<var name="ACE_REMOTE_SERVER" value="@{aceRemoteBrokerHost}" />
+				<echo message="ACE Server Name=${ACE_REMOTE_SERVER}" />
+				<if>
+					<equals arg1="${idxCount}" arg2="1" />
+					<then>
+						<echo message="IndexNO# ${idxCount}" />
+						<var name="ACE_SOURCE_SERVER" value="@{aceRemoteBrokerHost}" />
+						<if>
+							<equals arg1="${DEPLOYMENT_OPTION}" arg2="ASSEMBLE_AND_DEPLOY" />
+							<then>
+								<echo message="Proceeding with mqsipackagebar " />
+								<antcall target="copyWorkspace" />
+								<antcall target="mqsicreatebar.buildbar">
+									<param name="ACE_SERVER" value="${ACE_REMOTE_SERVER}" />
+									<param name="ACE_APPLICATION_NAME" value="${ACE_APPLICATION_NAME}" />
+									<param name="DEPLOY_OPT" value="${DEPLOYMENT_OPTION}" />
+								</antcall>
+							</then>
+							<else>
+								<echo message="Proceeding with DeployOnly option from assembleApp target. Going to run mqsiapplybaroverride " />
+								<antcall target="mqsiapplybaroverride.modifybar">
+									<param name="ACE_SERVER" value="${ACE_REMOTE_SERVER}" />
+									<param name="ACE_APPLICATION_NAME" value="${ACE_APPLICATION_NAME}" />
+									<param name="DEPLOY_OPT" value="${DEPLOYMENT_OPTION}" />
+								</antcall>
+							</else>
+						</if>
+					</then>
+					<else>
+						<echo message="IndexNO# ${idxCount}" />
+						<var name="ACE_TARGET_SERVER" value="@{aceRemoteBrokerHost}" />
+						<antcall target="copyfiles">
+							<param name="ACE_SOURCE_SERVER" value="${ACE_SOURCE_SERVER}" />
+							<param name="ACE_TARGET_SERVER" value="${ACE_TARGET_SERVER}" />
+						</antcall>
+					</else>
+				</if>
+				<antcall target="mqsideploy.deploybar">
+					<param name="BRK" value="${BROKER}" />
+					<param name="ACE_SOURCE_SERVER" value="${ACE_SOURCE_SERVER}" />
+					<param name="ACE_REMOTE_SERVERS" value="${ACE_REMOTE_HOST.LIST}" />
+					<param name="ACE_APPLICATION_NAME" value="${ACE_APPLICATION_NAME}" />
+					<param name="INDEX_COUNT" value="${idxCount}" />
+					<param name="DEPLOY_OPT" value="${DEPLOYMENT_OPTION}" />
+					<param name="CHECK-IN" value="${BAR-CHECK-IN}" />
+				</antcall>
+				<antcall target="cleanupFiles">
+					<param name="DEPLOYMENT_OPTION" value="${DEPLOYMENT_OPTION}" />
+					<param name="idxCount" value="${idxCount}" />
+					<param name="ACE_REMOTE_SERVER" value="${ACE_REMOTE_SERVER}" />
+					<param name="ACE_TARGET_DIR" value="${ACE_WORKSPACE}" />
+				</antcall>
+				<math result="idxCount" operand1="${idxCount}" operation="${op}" operand2="1" datatype="int" />
+			</sequential>
+		</for>
+	</target>
+	<!--Target to build the broker archive using mqsicreatebar-->
+	<target name="mqsicreatebar.buildbar" description="This ant target creates the BAR files using mqsicreatebar with referencing all required projects.">
+		<echo message="mqsicreatebar progress::" />
+		<echo message="JENKIN_WORKSPACE : ${JENKINS_WORKSPACE}" />
+		<echo message="BUILD_WORKSPACE : ${BUILD_WORKSPACE}" />
+		<echo message="BUILD_HOME# : ${BUILD_HOME}" />
+		<echo message="ACE_APPLICATION_NAME:: ${ACE_APPLICATION_NAME}" />
+		<mkdir dir="${BAR_TARGET_WIN_LOCATION}" />
+		<if>
+			<equals arg1="${APP_TYPE}"	arg2="APP" />
+			<then>
+				<var name="mqsicreatebarString" value="mqsicreatebar -data ${BUILD_WORKSPACE} -b ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar -a ${ACE_APPLICATION_NAME} -deployAsSource -trace -v ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.${ENV_NAME}.bar.log" />
+			</then>
+			<else>
+				<var name="mqsicreatebarString" value="mqsicreatebar -data ${BUILD_WORKSPACE} -b ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar -l ${ACE_APPLICATION_NAME} -deployAsSource -trace -v ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.${ENV_NAME}.bar.log" />
+			</else>
+		</if>
+		<echo message="mqsicreatebar:: ${mqsicreatebarString}" />
+		<exec dir="${ACE_TOOLKIT_HOME}" executable="cmd">
+			<arg value="/c ${mqsicreatebarString}" />
+		</exec>
+		<copy file="${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar" todir="${JENKINS_WORKSPACE}/ace-bars/assembly-iib/BARS" />
+		<echo message="Successfully completed mqsicreatebar. Going to run mqsiapplybaroverride " />
+		<antcall target="mqsiapplybaroverride.modifybar">
+			<param name="ACE_APPLICATION_NAME" value="${ACE_APPLICATION_NAME}" />
+			<param name="DEPLOY_OPT" value="${DEPLOY_OPT}" />
+		</antcall>
+	</target>
+	<!--Target to build the broker archive using mqsiapplybaroverride-->
+	<target name="mqsiapplybaroverride.modifybar" description="This ant target applies overrides to the generated bar file from properties file.">
+		<if>
+			<equals arg1="${DEPLOY_OPT}" arg2="ASSEMBLE_AND_DEPLOY" />
+			<then>
+				<echo message="Deployment option=${DEPLOY_OPT}" />
+				<echo message="ACE Server Name=${USER_NAME}:${PASSWORD}@${ACE_SERVER}:${REMOTE_BUILD_WORKSPACE}" />
+				<echo message="ACE_APPLICATION_NAME:: ${ACE_APPLICATION_NAME}" />
+				<scp todir="${USER_NAME}@${ACE_SERVER}:${REMOTE_BUILD_WORKSPACE}"  password="${PASSWORD}" trust="yes" failonerror="true">
+					<fileset dir="${JENKINS_WORKSPACE}/ace-build-process/" />
+					<fileset dir="${JENKINS_WORKSPACE}/ace-bar-overrides/" />
+					<fileset dir="${JENKINS_WORKSPACE}/ace-bars/" />
+				</scp>
+				<var name="mqsiapplybaroverrideString" value="modify ${APP_TYPE} ${ACE_APPLICATION_NAME} ${REMOTE_BAR_BASE_LOC}/${ACE_APPLICATION_NAME}.bar ${REMOTE_BUILD_WORKSPACE}/BarFileProperties/${ENV_NAME}/${ACE_APPLICATION_NAME}.${ENV_NAME}.properties ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar.log" />
+				<echo message="mqsiapplybaroverride:: ${mqsiapplybaroverrideString}" />
+				<sshexec host="${ACE_SERVER}" username="${USER_NAME}" password="${PASSWORD}" trust="yes" command="exec python ${REMOTE_SCRIPT_LOCATION}deployment.py ${mqsiapplybaroverrideString}" failonerror="true"/>
+				<echo message="Successfully completed mqsiapplybaroverride process. " />
+			</then>
+		</if>
+	</target>
+
+	<!--Target to build the broker archive using copyWorkspace-->
+
+	<target name="copyWorkspace" description="This ant target copies the IIB workspace from Jenkins Workspace directory.">
+		<echo message="ACE_APPLICATION_NAME:: ${ACE_APPLICATION_NAME}" />
+		<copy todir="${BUILD_WORKSPACE}" failonerror="true">
+			<fileset dir="..\..\ace_cache_loader\" />
+			<fileset dir="..\..\ace_common_lib\" />
+			<fileset dir="..\..\ace_sap_lib\" />
+			<fileset dir="..\..\ace_whi-common\" erroronmissingdir='false' />
+			<fileset dir="..\..\ace_wxs-common-lib\" />
+			<fileset dir="..\..\ace-bar-overrides\" />
+			<fileset dir="..\..\ace-build-process\" />
+		</copy>
+		<mkdir dir="..\..\ace-bars\" />
+	</target>
+	<target name="copyfiles" description="This ant target copies directories/files from ${ACE_SOURCE_SERVER} to ${ACE_TARGET_SERVER}.">
+		<echo message="ACE Source Server=${ACE_SOURCE_SERVER}" />
+		<echo message="ACE Target Server=${ACE_TARGET_SERVER}" />
+		<echo message="JENKINS WORKSPACE=${JENKINS_WORKSPACE}" />
+		<if>
+			<equals arg1="${DEPLOY_OPT}" arg2="ASSEMBLE_AND_DEPLOY" />
+			<then>
+				<scp file="${BAR_TARGET_WIN_LOCATION}\\${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar" todir="${USER_NAME}:${PASSWORD}@${ACE_SOURCE_SERVER}:${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}" trust="true" failonerror="true" />
+			</then>
+			<else>
+				<var name="parametersString" value="${REMOTE_BUILD_LOCATION} ${ACE_TARGET_SERVER} ${USER_NAME} ${REMOTE_BUILD_LOCATION} " />
+				<sshexec host="${ACE_SOURCE_SERVER}" username="${USER_NAME}" password="${PASSWORD}" trust="yes" command="/bin/bash -l ${REMOTE_SCRIPT_LOCATION}copyDirectories.sh ${parametersString}" failonerror="true" />
+			</else>
+		</if>
+		<echo message="Successfully copied directories/files from ${ACE_SOURCE_SERVER} to ${ACE_TARGET_SERVER}" />
+	</target>
+	<target name="mqsideploy.deploybar" description="This ant target deploys the bar file to the target IIB server.">
+		<propertycopy property="EXE_GROUP_NAME" from="${ACE_APPLICATION_NAME}.EG_NAME" />
+		<echo message="Target ACE host name::${ACE_REMOTE_SERVER} " />
+		<echo message="ACE Host List Index Count::${INDEX_COUNT} " />
+		<echo message="BAR_CHECK_IN=${CHECK-IN}" />
+		<if>
+			<equals arg1="${DEPLOY_OPT}" arg2="ASSEMBLE_AND_DEPLOY" />
+			<then>
+				<if>
+					<equals arg1="${ENV_NAME}" arg2="DEV" />
+					<then>
+						<echo message="Target broker is ${ACE_REMOTE_SERVERS} " />
+						<var name="parametersString" value=" deploy ${BRK} &quot;${ACE_REMOTE_SERVERS}&quot; ${EXE_GROUP_NAME} ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar 300 ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.deploy.log ${ACE_APPLICATION_NAME}.bar ${PROJECT_NAME} ${CHECK-IN}" />
+					</then>
+				</if>
+				<if>
+					<equals arg1="${ENV_NAME}" arg2="DEVCACHE" />
+					<then>
+						<echo message="Target broker is ${ACE_REMOTE_SERVERS} " />
+						<var name="parametersString" value=" deploy ${BRK} &quot;${ACE_REMOTE_SERVERS}&quot; ${EXE_GROUP_NAME} ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar 300 ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.deploy.log ${ACE_APPLICATION_NAME}.bar ${PROJECT_NAME} ${CHECK-IN}" />
+					</then>
+				</if>
+			</then>
+		</if>
+		<echo message="parametersString is ${parametersString} " />
+		<echo message="Deploying the ${ACE_APPLICATION_NAME}.${ENV_NAME}.bar to the server ${ACE_REMOTE_SERVERS}" />
+		<sshexec host="${ACE_SOURCE_SERVER}" username="${USER_NAME}" password="${PASSWORD}" trust="yes" command="exec python ${REMOTE_SCRIPT_LOCATION}deployment.py ${parametersString}" failonerror="true" />
+		<echo message="mqsideploy is Successfully completed deploying  ${ACE_APPLICATION_NAME}.${ENV_NAME}.bar" />
+	</target>
+	<target name="cleanupFiles" description="This ant target clean-up the files and directories from ACE Source Server.">
+		<echo message="DEPLOYMENT_OPTION:: ${DEPLOYMENT_OPTION} " />
+		<echo message="IndexCount:: ${idxCount} " />
+		<echo message="ACE_REMOTE_SERVER:: ${ACE_REMOTE_SERVER} " />
+		<echo message="ACE_TARGET_DIR:: ${BAR_TARGET_LOCATION} " />
+		<if>
+			<equals arg1="${DEPLOYMENT_OPTION}" arg2="ASSEMBLE_AND_DEPLOY" />
+			<then>
+				<if>
+					<equals arg1="${idxCount}" arg2="1" />
+					<then>
+						<!-- to delete the IIB workspace after the build -->
+						<echo message="Proeeding to delete all the files/directories from ${ACE_WORKSPACE} " />
+						<sshexec host="${ACE_REMOTE_SERVER}" username="${USER_NAME}" password="${PASSWORD}" trust="yes" command="/bin/bash -l ${SCRIPT_LOCATION}removeDirectory.sh ${BAR_TARGET_LOCATION}" failonerror="false" />
+						<delete includeemptydirs="true">
+							<fileset dir="${BUILD_WORKSPACE}" includes="**/*" />
+						</delete>
+					</then>
+					<else>
+					</else>
+				</if>
+			</then>
+		</if>
+	</target>
+	
+	<target name="DeployOnly" description="This ant target assemble, build and deploy the IIB applications depending on the deployment option chosen. ">
+		<echo message="ACE_APPLICATION_NAME# ${ACE_APPLICATION_LIST}" />
+		<echo message="ACE_HOST_LIST# ${ACE_REMOTE_HOST.LIST}" />
+		<echo message="BUILD_HOME# ${BUILD_HOME}" />
+		<var name="idxCount" value="1" />
+		<var name="op" value="+" />
+		<antcall target="copyWorkspace.deployOnly" />
+		<for list="${ACE_APPLICATION_LIST}" param="aceApplicationName" delimiter=";">
+			<sequential>
+					<var name="ACE_APP_NAME" value="@{aceApplicationName}" />
+					<echo message="ACE_APP_NAME:: ${ACE_APP_NAME}" />
+					<antcall target="mqsiApplyBarOverride.modifyBar.deployOnly">
+						<param name="DEPLOY_OPT" value="${DEPLOYMENT_OPTION}"/>	
+						<param name="ACE_SERVER" value="${ACE_SOURCE_SERVER}" />
+						<param name="ACE_APPLICATION_NAME" value="${ACE_APP_NAME}" />
+					</antcall>
+					<antcall target="mqsiDeploy.deployBar.deployOnly">
+						<param name="BRK" value="${BROKER}" />
+						<param name="ACE_SOURCE_SERVER" value="${ACE_SOURCE_SERVER}" />
+						<param name="ACE_REMOTE_SERVERS" value="${ACE_REMOTE_HOST.LIST}" />
+						<param name="ACE_APPLICATION_NAME" value="${ACE_APP_NAME}" />
+						<param name="INDEX_COUNT" value="${idxCount}" />
+					</antcall>
+			</sequential>
+		</for>									
+	</target>	
+	<!--Target to build the broker archive using mqsiapplybaroverride-->
+	<target name="mqsiApplyBarOverride.modifyBar.deployOnly" description="This ant target applies overrides to the generated bar file from properties file.">
+		<if>
+			<equals arg1="${DEPLOY_OPT}" arg2="DEPLOY_ONLY" />
+			<then>
+				<echo message="Deployment option=${DEPLOY_OPT}" />
+				<echo message="ACE Server Name=${USER_NAME}:${PASSWORD}@${ACE_SERVER}:${REMOTE_BUILD_WORKSPACE}" />
+				<echo message="ACE_APPLICATION_NAME:: ${ACE_APPLICATION_NAME}" />
+				<scp todir="${USER_NAME}@${ACE_SERVER}:${REMOTE_BUILD_WORKSPACE}"  password="${PASSWORD}" trust="yes" failonerror="true">
+					<fileset dir="${JENKINS_WORKSPACE}/ace-build-process/" />
+					<fileset dir="${JENKINS_WORKSPACE}/ace-bar-overrides/" />
+					<fileset dir="${JENKINS_WORKSPACE}/ace-bars/" />
+				</scp>
+				<if>
+					<equals arg1="${ENV_NAME}" arg2="PROD"/>
+					<then>
+						<var name="mqsiapplybaroverrideString" value="modify ${APP_TYPE} ${ACE_APPLICATION_NAME} ${REMOTE_BAR_PROD_LOC}/${ACE_APPLICATION_NAME}.bar ${REMOTE_BUILD_WORKSPACE}/BarFileProperties/${ENV_NAME}/${ACE_APPLICATION_NAME}.${ENV_NAME}.properties ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar.log" />
+					</then>
+					<else>
+						<var name="mqsiapplybaroverrideString" value="modify ${APP_TYPE} ${ACE_APPLICATION_NAME} ${REMOTE_BAR_BASE_LOC}/${ACE_APPLICATION_NAME}.bar ${REMOTE_BUILD_WORKSPACE}/BarFileProperties/${ENV_NAME}/${ACE_APPLICATION_NAME}.${ENV_NAME}.properties ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar.log" />
+					</else>
+				</if>		
+				<echo message="mqsiapplybaroverride:: ${mqsiapplybaroverrideString}" />
+				<sshexec host="${ACE_SERVER}" username="${USER_NAME}" password="${PASSWORD}" trust="yes" command="exec python ${REMOTE_SCRIPT_LOCATION}deployment.py ${mqsiapplybaroverrideString}" failonerror="true"/>
+				<echo message="Successfully completed mqsiapplybaroverride process. " />
+			</then>
+		</if>
+	</target>	
+	
+	<target name="copyWorkspace.deployOnly" description="This ant target copies the IIB workspace from Jenkins Workspace directory.">
+		<echo message="ACE_APPLICATION_NAME:: ${ACE_APPLICATION_NAME}" />
+		<copy todir="${BUILD_WORKSPACE}" failonerror="true">
+			<fileset dir="..\..\ace-bar-overrides\" />
+			<fileset dir="..\..\ace-build-process\" />
+		</copy>
+		<mkdir dir="..\..\ace-bars\" />
+	</target>
+	
+	<target name="mqsiDeploy.deployBar.deployOnly" description="This ant target deploys the bar file to the target IIB server.">
+		<propertycopy property="EXE_GROUP_NAME" from="${ACE_APPLICATION_NAME}.EG_NAME" />
+		<echo message="Target ACE Source Server::${ACE_SOURCE_SERVER} " />
+		<echo message="Target ACE host names::${ACE_REMOTE_SERVERS} " />
+		<if>
+			<or>
+				<equals arg1="${ENV_NAME}" arg2="DEV" />
+				<equals arg1="${ENV_NAME}" arg2="QA" />
+				<equals arg1="${ENV_NAME}" arg2="PERF" />
+				<equals arg1="${ENV_NAME}" arg2="PROD" />
+			</or>
+			<then>
+				<echo message="Target broker is ${ACE_REMOTE_SERVERS} " />
+				<var name="parametersString" value=" deploy ${BRK} &quot;${ACE_REMOTE_SERVERS}&quot; ${EXE_GROUP_NAME} ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar 300 ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.deploy.log" />
+			</then>
+		</if>
+		<if>
+			<or>
+				<equals arg1="${ENV_NAME}" arg2="DEVCACHE" />
+				<equals arg1="${ENV_NAME}" arg2="QACACHE" />
+				<equals arg1="${ENV_NAME}" arg2="PRODCACHE" />
+			</or>
+			<then>
+				<echo message="Target broker is ${ACE_REMOTE_SERVERS} " />
+				<var name="parametersString" value=" deploy ${BRK} &quot;${ACE_REMOTE_SERVERS}&quot; ${EXE_GROUP_NAME} ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.${ENV_NAME}.${JENKINS_JOB_NAME}-${JENKINS_BUILD_NUMBER}.bar 300 ${REMOTE_BUILD_WORKSPACE}/${REMOTE_BAR_TARGET_LOC}/${ACE_APPLICATION_NAME}.deploy.log" />
+			</then>
+		</if>
+					
+		<echo message="parametersString is ${parametersString} " />
+		<echo message="Deploying the ${ACE_APPLICATION_NAME}.${ENV_NAME}.bar to the server ${ACE_REMOTE_SERVERS}" />
+		<sshexec host="${ACE_SOURCE_SERVER}" username="${USER_NAME}" password="${PASSWORD}" trust="yes" command="exec python ${REMOTE_SCRIPT_LOCATION}deployment.py ${parametersString}" failonerror="true" />
+		<echo message="mqsideploy is Successfully completed deploying  ${ACE_APPLICATION_NAME}.${ENV_NAME}.bar" />
+	</target>	
+</project>
