@@ -234,7 +234,7 @@
 		<var name="mqsipackagebarString" value="exec -it -u 0 aceserver bash -c mqsipackagebar -data ${BUILD_WORKSPACE} -b ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar -a ${ACE_APPLICATION_NAME} -deployAsSource -trace -v ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.${ENV_NAME}.bar.log" />
 		<echo message="mqsipackagebar:: ${mqsipackagebarString}" />
 		<exec executable="docker">
-			<arg value="/c ${mqsipackagebarString}" />
+			<arg value="${mqsipackagebarString}" />
 		</exec>
 		<copy file="${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar" todir="${JENKINS_WORKSPACE}/ace-bars/assembly-iib/BARS" />
 		<echo message="Successfully completed mqsicreatebar. Going to run mqsiapplybaroverride " />
