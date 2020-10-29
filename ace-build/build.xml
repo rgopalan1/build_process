@@ -231,18 +231,10 @@
 		<echo message="BUILD_HOME# : ${BUILD_HOME}" />
 		<echo message="ACE_APPLICATION_NAME:: ${ACE_APPLICATION_NAME}" />
 		<mkdir dir="${BAR_TARGET_WIN_LOCATION}" />
-		<if>
-			<equals arg1="${APP_TYPE}"	arg2="APP" />
-			<then>
-				<var name="mqsicreatebarString" value="mqsicreatebar -data ${BUILD_WORKSPACE} -b ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar -a ${ACE_APPLICATION_NAME} -deployAsSource -trace -v ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.${ENV_NAME}.bar.log" />
-			</then>
-			<else>
-				<var name="mqsicreatebarString" value="mqsicreatebar -data ${BUILD_WORKSPACE} -b ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar -l ${ACE_APPLICATION_NAME} -deployAsSource -trace -v ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.${ENV_NAME}.bar.log" />
-			</else>
-		</if>
-		<echo message="mqsicreatebar:: ${mqsicreatebarString}" />
-		<exec dir="${ACE_TOOLKIT_HOME}" executable="cmd">
-			<arg value="/c ${mqsicreatebarString}" />
+		<var name="mqsipackagebarString" value="docker exec -it -u 0 aceserver bash -c mqsipackagebar -data ${BUILD_WORKSPACE} -b ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar -a ${ACE_APPLICATION_NAME} -deployAsSource -trace -v ${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.${ENV_NAME}.bar.log" />
+		<echo message="mqsipackagebar:: ${mqsipackagebarString}" />
+		<exec executable="cmd">
+			<arg value="/c ${mqsipackagebarString}" />
 		</exec>
 		<copy file="${BAR_BASE_LOCATION}\${ACE_APPLICATION_NAME}.bar" todir="${JENKINS_WORKSPACE}/ace-bars/assembly-iib/BARS" />
 		<echo message="Successfully completed mqsicreatebar. Going to run mqsiapplybaroverride " />
