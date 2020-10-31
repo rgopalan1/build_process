@@ -270,7 +270,7 @@
 		<echo message="ACE_APPLICATION_NAME:: ${ACE_APPLICATION_NAME}" />
 		<copy todir="${BUILD_WORKSPACE}" failonerror="true">
 			<fileset dir="../../ace-source/" />
-			<fileset dir="../../ace-build/" />
+			<fileset dir="../../build/" />
 		</copy>
 		<mkdir dir="../../ace-bars/" />
 	</target>
